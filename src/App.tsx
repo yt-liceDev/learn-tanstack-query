@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -18,8 +19,69 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
+import { FormEvent, useState } from "react"
+
+type Product = {
+  id: string
+  name: string
+  price: number
+  category: string
+}
+
+const getProducts = async (page: number) => {
+  const res = await fetch("http://localhost:8000/api/v1/product?page=" + page)
+
+  if (!res.ok) {
+    throw Error("fail to fetching")
+  }
+
+  return await res.json()
+}
+
+const addProduct = async (product: unknown) => {
+  const res = await fetch("http://localhost:8000/api/v1/product", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(product),
+  })
+
+  return await res.json()
+}
 
 export default function App() {
+  const [page, setPage] = useState(1)
+
+  const { data, isPending, error, isFetching } = useQuery({
+    queryKey: ["product", page],
+    queryFn: () => getProducts(page),
+    placeholderData: keepPreviousData,
+  })
+
+  const query = useQueryClient()
+  const mutation = useMutation({ mutationFn: addProduct })
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    const form = e.target as HTMLFormElement
+    const formData = new FormData(form)
+    const product = Object.fromEntries(formData)
+
+    mutation.mutate(product, {
+      onSuccess() {
+        form.reset()
+        query.invalidateQueries({ queryKey: ["product"] })
+      },
+    })
+  }
+
   return (
     <>
       <nav className='py-4 px-8 h-14 border-b border-b-slate-200 shadow-sm'>
@@ -32,7 +94,7 @@ export default function App() {
               <CardTitle>Add Product</CardTitle>
             </CardHeader>
             <CardContent>
-              <form className='space-y-4'>
+              <form onSubmit={handleSubmit} className='space-y-4'>
                 <div className='space-y-2'>
                   <Label htmlFor='name'>Name :</Label>
                   <Input type='text' id='name' name='name' placeholder='Name' />
@@ -54,7 +116,9 @@ export default function App() {
                   </Select>
                 </div>
                 <div className='text-end'>
-                  <Button type='submit'>Submit</Button>
+                  <Button type='submit' disabled={mutation.isPending}>
+                    Submit
+                  </Button>
                 </div>
               </form>
             </CardContent>
@@ -70,31 +134,52 @@ export default function App() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell>Fanta</TableCell>
-                  <TableCell>Rp. 3000</TableCell>
-                  <TableCell>Minuman</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Sprite</TableCell>
-                  <TableCell>Rp. 3000</TableCell>
-                  <TableCell>Minuman</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell>Taro</TableCell>
-                  <TableCell>Rp. 5000</TableCell>
-                  <TableCell>Makanan</TableCell>
-                </TableRow>
+                {isPending || isFetching ? (
+                  <TableRow>
+                    <TableCell>
+                      <Skeleton className='w-16 h-4 bg-zinc-300 rounded-md' />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className='w-16 h-4 bg-zinc-300 rounded-md' />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className='w-16 h-4 bg-zinc-300 rounded-md' />
+                    </TableCell>
+                  </TableRow>
+                ) : error ? (
+                  <p>{error.message}</p>
+                ) : (
+                  data?.products?.map((product: Product) => (
+                    <TableRow key={product.id}>
+                      <TableCell>{product.name}</TableCell>
+                      <TableCell>
+                        {new Intl.NumberFormat("id", {
+                          style: "currency",
+                          currency: "idr",
+                          maximumFractionDigits: 0,
+                        }).format(product.price)}
+                      </TableCell>
+                      <TableCell>{product.category}</TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
             <Pagination className='justify-end mt-4'>
               <PaginationContent>
                 <PaginationItem>
-                  <Button>Previous</Button>
+                  <Button onClick={() => setPage((old) => old - 1)} disabled={page === 1}>
+                    Previous
+                  </Button>
                 </PaginationItem>
-                <PaginationItem>1</PaginationItem>
+                <PaginationItem>{page}</PaginationItem>
                 <PaginationItem>
-                  <Button> Next</Button>
+                  <Button
+                    onClick={() => setPage((old) => old + 1)}
+                    disabled={page === data?.totalPage}
+                  >
+                    Next
+                  </Button>
                 </PaginationItem>
               </PaginationContent>
             </Pagination>
